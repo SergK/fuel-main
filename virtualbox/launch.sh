@@ -25,20 +25,30 @@ case "$(uname)" in
       ;;
 esac
 
+case "$1" in
+    deploy )
+      # Prepare the host system
+      ./actions/prepare-environment.sh || exit 1
 
-# Prepare the host system
-./actions/prepare-environment.sh || exit 1
+      # clean previous installation if exists
+      ./actions/clean-previous-installation.sh || exit 1
 
-# clean previous installation if exists
-./actions/clean-previous-installation.sh || exit 1
+      # create host-only interfaces
+      ./actions/create-interfaces.sh || exit 1
 
-# create host-only interfaces
-./actions/create-interfaces.sh || exit 1
+      # Create and launch master node
+      ./actions/master-node-create-and-install.sh || exit 1
 
+      # Create and launch slave nodes
+      ./actions/slave-nodes-create-and-boot.sh || exit 1
+      ;;
 
-# Create and launch master node
-./actions/master-node-create-and-install.sh || exit 1
-
-# Create and launch slave nodes
-./actions/slave-nodes-create-and-boot.sh || exit 1
-
+    add-slave )
+      # Create and launch slave nodes
+      ./actions/slave-nodes-create-and-boot.sh "$2"|| exit 1
+      ;;
+    *)
+      echo $"Usage: $0 {deploy|add-slave [number of slaves] }"
+      exit 1
+      ;;  
+esac
