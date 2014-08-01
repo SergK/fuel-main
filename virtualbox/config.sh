@@ -112,3 +112,10 @@ vm_slave_memory_mb[5]=1024
 vm_slave_first_disk_mb=65535
 vm_slave_second_disk_mb=65535
 vm_slave_third_disk_mb=65535
+
+
+###### CLuster deployment with roles
+
+# Define place where the keys stored (use system default location) 
+KEYPATH=~/.ssh/
+KEY=${KEYPATH}${vm_name_prefix}key

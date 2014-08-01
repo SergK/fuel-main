@@ -49,7 +49,7 @@ fi
 # Detect the list of installed SLAVE FUEL(!) VMs, master should exist
 vmlist=$(get_vms_present | sed 's/ /\n/g' | grep ${vm_name_prefix}slave)
 
-# check if we alrady have slave VMs.
+# check if we already have slave VMs.
 if [ -z "${vmlist}" ]; then
   # no Fuel slave VMs, so this is the first time installation
   first_idx=1
