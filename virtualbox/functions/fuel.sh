@@ -14,13 +14,15 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-# This file contains the functions for connecting to Fuel VM and deploy clsuter
+# This file contains the functions for working with Fuel CLI over ssh
 
 # Include the script with handy functions
-source config.sh
+# source config.sh
+# source functions/common.sh 
 
 ## TODO: Should we check data in scripts or let Fuel do it for us?
-## If smth will changed in command line, then using Fuel result is more rubust
+## - If smth will changed in command line of Fuel, then using Fuel result is more rubust
+## - Positional parameters, try to remove this dependency, then we should use param_name=param_vale
 
 # we need auth by public key
 sshfuelopt='-oConnectTimeout=5 -oStrictHostKeyChecking=no -oCheckHostIP=no -oUserKnownHostsFile=/dev/null -oRSAAuthentication=no -q'
@@ -83,22 +85,21 @@ get_list_fuel_env() {
 }
 
 
-create_fuel_env() {
-  # Create Fuel env
+create_fuel_default_env() {
+  # Create default Fuel env
   # fuel env create --name MyEnv --rel 1
   name=$1  #name of env
   rel=$2   #release number
 
-  if [[ -z $1 || -z $2 ]]; then
-    echo "Please be sure, that you defined parameters: \$1=name, \$2=release "
+  if [[ -z $1 || -z $2 || ! $2 =~ ^[0-9]+$ ]]; then
+    echo "Please be sure, that you defined parameters: \$1=name, \$2=release (Number)"
     echo "You can check releases (get_list_fuel_release) and envs (get_list_fuel_env)"
     # return error
     return 1
-  else
-    exec_on_fuel_master ${vm_master_username} ${vm_master_ip} "fuel env create --name ${name} --rel ${rel}"
-    # return error code
-    return $?
   fi
+  exec_on_fuel_master ${vm_master_username} ${vm_master_ip} "fuel env create --name ${name} --rel ${rel}"
+  # return error code
+  return $?
 }
 
 
@@ -112,11 +113,10 @@ change_fuel_env_name() {
     echo "Please be sure, that you defined parameters: \$1=environment (Number), \$2=new name"
     # return error
     return 1
-  else
-    exec_on_fuel_master ${vm_master_username} ${vm_master_ip} "fuel --env ${env} env set --name \"${name}\" "
-    # return error code
-    return $?
   fi
+  exec_on_fuel_master ${vm_master_username} ${vm_master_ip} "fuel --env ${env} env set --name \"${name}\" "
+  # return error code
+  return $?
 }
 
 
@@ -130,11 +130,10 @@ change_fuel_env_mode() {
     echo "Please be sure, that you defined parameters: \$1=environment (Number), \$2=mode"
     # return error
     return 1
-  else
-    exec_on_fuel_master ${vm_master_username} ${vm_master_ip} "fuel --env ${env} env set --mode \"${mode}\" "
-    # return error code
-    return $?
   fi
+  exec_on_fuel_master ${vm_master_username} ${vm_master_ip} "fuel --env ${env} env set --mode \"${mode}\" "
+  # return error code
+  return $?
 }
 
 
@@ -148,11 +147,10 @@ change_fuel_env_net() {
     echo "Please be sure, that you defined parameters: \$1=environment (Number), \$2=network-mode"
     # return error
     return 1
-  else
-    exec_on_fuel_master ${vm_master_username} ${vm_master_ip} "fuel --env ${env} env set --network-mode \"${nmode}\" "
-    # return error code
-    return $?
   fi
+  exec_on_fuel_master ${vm_master_username} ${vm_master_ip} "fuel --env ${env} env set --network-mode \"${nmode}\" "
+  # return error code
+  return $?
 }
 
 
@@ -165,19 +163,183 @@ delete_fuel_env() {
     echo "Please provide environment number (should be number). Please check it with (get_list_fuel_env)"
     # return error
     return 1
-  else
-    exec_on_fuel_master ${vm_master_username} ${vm_master_ip} "fuel --env $1 env delete"
-    # return error code
+  fi
+  exec_on_fuel_master ${vm_master_username} ${vm_master_ip} "fuel --env $1 env delete"
+  # return error code
+  return $?
+}
+
+########### Working  with nodes
+
+get_list_fuel_node() {
+  # Get the list of all nodes (default) or for exact environment
+  # fuel node list (deafault)
+  # fuel --env-id 1 node list
+  env=$1
+
+  if [[ -z $1 ]]; then
+    # print all nodes by default
+    exec_on_fuel_master ${vm_master_username} ${vm_master_ip} "fuel node list"
     return $?
+  fi
+
+  if [[ $1 =~ ^[0-9]+$ ]]; then
+    # get nodes for exact env
+    # parameter is the number, let's try to get the information
+    exec_on_fuel_master ${vm_master_username} ${vm_master_ip} "fuel --env-id ${env} node list"
+    return $?
+  else
+    echo "Environment number should be integer. Please check which one with (get_list_fuel_env)"
+    return 1
   fi
 }
 
 
-get_list_fuel_nodes() {
-  # Get the list of nodes
-  # fuel node list
+assign_node_to_env() {
+  # Assign nodes to environment with specific roles
+  # fuel node set --node 1 --role controller --env 1
+  # fuel node set --node 2,3,4 --role compute,cinder --env 1
+  node_list=$1
+  role_list=$2
+  env=$3
 
-  exec_on_fuel_master ${vm_master_username} ${vm_master_ip} "fuel node list"
+  if [ $# -ne 3 ];then
+    echo "Please provide following list of parameters: "
+    echo "node_list role_list env"
+    return 1
+  fi
 
+  exec_on_fuel_master ${vm_master_username} ${vm_master_ip} "fuel node set --node ${node_list} --role ${role_list} --env ${env}"
   return $?
+}
+
+
+remove_node_from_env() {
+  # Remove nodes from environment. Nodes can be removed by two approaches (by node, by env):
+  # parameters: node=2,3,4  or env=1
+  # fuel node remove --node 2,3
+  # fuel node remove --env 1
+
+  # define which parameter user passed
+  param=$(echo $1 | cut -d'=' -f1)
+  # and it's value
+  value=$(echo $1 | cut -d'=' -f2)
+
+  case "${param}" in
+    node*)
+      exec_on_fuel_master ${vm_master_username} ${vm_master_ip} "fuel node remove --node ${value}"
+      return $?
+      ;;
+    env*)
+      exec_on_fuel_master ${vm_master_username} ${vm_master_ip} "fuel node remove --env ${value} --all"
+      return $?
+      ;;
+    *)
+      echo "Please, pass the only ONE parameter to this function in format:"
+      echo "node=x1,x2,x2 - for removing nodes x1,x2,x3 from environment(s)"
+      echo "or"
+      echo "env=x         - for removing all nodes from environment x"
+      ;;
+  esac
+  return 1
+}
+
+
+##### Deployment section
+
+provision_node(){
+  # provision only some nodes (status changes to provisioning)
+  # fuel node --node 1,2 --provision --env 1
+  env=$1
+  node=$2
+
+  if [[ -z $1 || -z $2 || ! $1 =~ ^[0-9]+$ ]]; then
+    echo "Please provide environment number (should be integer) and node(s) number. Please check it with (get_list_fuel_env)"
+    echo "Usage: provision_node environment node(s)"
+    # return error
+    return 1
+  fi
+  exec_on_fuel_master ${vm_master_username} ${vm_master_ip} "fuel node --node ${node} --provision --env ${env}"
+  # return error code
+  return $?
+}
+
+deploy_node() {
+  # deploy node after provisioning
+  # fuel node --deploy --node 1,2 --env 1
+  echo "Not implemented"
+}
+
+deploy_env() {
+  # deploy environment changes (provision+deploy)
+  # fuel --env 1 deploy-changes
+  env=$1
+
+  if [[ -z $1 || ! $1 =~ ^[0-9]+$ ]]; then
+    echo "Please provide environment number (should be integer). Please check it with (get_list_fuel_env)"
+    # return error
+    return 1
+  fi
+  exec_on_fuel_master ${vm_master_username} ${vm_master_ip} "fuel --env ${env} deploy-changes"
+  # return error code
+  return $?
+}
+
+
+##### Different staff
+## TODO for staff: we need to make selection not on position of column, but by name
+
+get_nodes_ready_for_deployment() {
+  # Get the list of nodes, ready for deployment
+  # currently we are not checking node facters
+  # get id, status, cluster - which is enough to define node's "exact" status
+  # TODO: check, may be don't need status and (id, cluster) is enough
+  
+  echo $(get_list_fuel_node | cut -d'|' -f1,2,4 | grep "discover"  | grep "None" | grep -o -E '^[0-9]+')
+  return 0
+}
+
+
+get_env_id_by_name() {
+  # Return environment id by name
+  # the result of the function you can check using $?
+  env_name=$1
+
+  if [[ -z $1 ]];then
+    echo "Please, provide environment name"
+    exit 1
+  fi
+
+  ENV_ID=$(get_list_fuel_env | cut -d'|' -f1,3 | tail -n+3 | grep ${env_name} | cut -d'|' -f1)
+
+  if [[ -z ${ENV_ID} ]]; then
+    # Nothing found
+    echo "Environment with name ${env_name} doesn't exist"
+    return 1
+  else
+    echo ${ENV_ID}
+    return 0
+  fi
+}
+
+check_deployment_roles() {
+  # We need to check roles, that user want to deploy in defined environment
+  # TODO: There are a lot of limitations, need to investigate more
+  deployment_mode=$1
+  list_of_roles=$2
+
+  if [ $# -ne 2 ];then
+    echo "Please provide following list of parameters: "
+    echo "1) deployment_mode ('multinode', 'ha')"
+    echo "2) list_of_roles"
+    return 1
+  fi
+
+# check mode 'multinode', 'ha'
+if ! [[ "${deployment_mode}" =~ ^(multinode|ha)$ ]]; then
+    echo "Incorrect deployment mode. Please use ('multinode' or 'ha')"
+    exit 1
+fi
+
+
 }
