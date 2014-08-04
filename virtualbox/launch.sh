@@ -47,8 +47,15 @@ case "$1" in
       # Create and launch slave nodes
       ./actions/slave-nodes-create-and-boot.sh "$2"|| exit 1
       ;;
+
+    deploy-openstack)
+      ./actions/prepare-ssh-keypair.sh || exit 1
+      # MODE=multinode, RELEASE=1 by default
+      ./actions/deploy-openstack.sh
+      ;;
+
     *)
-      echo $"Usage: $0 {deploy|add-slave [number of slaves] }"
+      echo $"Usage: $0 {deploy|add-slave [number of slaves] | deploy-openstack}"
       exit 1
       ;;  
 esac

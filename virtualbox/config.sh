@@ -117,5 +117,16 @@ vm_slave_third_disk_mb=65535
 ###### CLuster deployment with roles
 
 # Define place where the keys stored (use system default location) 
+# working with SSH
 KEYPATH=~/.ssh/
 KEY=${KEYPATH}${vm_name_prefix}key
+
+# Options for OpenStack env deployment
+# fuel environment name
+ENV_NAME="MyEnv2"
+# Run slave on CentOS
+ENV_RELEASE=1 # centos
+# mode of environment
+MODE="multinode"
+# cluster configuration
+OS_CLUSTER="controller,cinder|compute|compute"
