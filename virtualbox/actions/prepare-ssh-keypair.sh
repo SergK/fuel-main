@@ -54,6 +54,9 @@ fi
 # Master fuel is running
 echo "[Ok]"
 
+# Remove old host key, because we will have error with key-host mismatch
+ssh-keygen -f ~/.ssh/known_hosts -R "${vm_master_ip}" >/dev/null 2>&1
+
 # Check wherethere public key is already installed, just testing connection, disabling password auth
 # Some bug found with new key, please see https://bugs.launchpad.net/ubuntu/+source/openssh/+bug/201786
 # This will fix the issue: export SSH_AUTH_SOCK=0
@@ -83,3 +86,5 @@ else
   # should work as it's in the same package as ssh (openssh-client)
   echo "Not yes implemented"
 fi
+
+exit 0

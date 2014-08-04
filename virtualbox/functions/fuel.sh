@@ -18,14 +18,18 @@
 
 # Include the script with handy functions
 source config.sh
-# source functions/common.sh 
 
-## TODO: Should we check data in scripts or let Fuel do it for us?
-## - If smth will changed in command line of Fuel, then using Fuel result is more rubust
-## - Positional parameters, try to remove this dependency, then we should use param_name=param_vale
 
-# we need auth by public key
-sshfuelopt='-oConnectTimeout=5 -oStrictHostKeyChecking=no -oCheckHostIP=no -oUserKnownHostsFile=/dev/null -oRSAAuthentication=no -q'
+## Should we check parameters (validation) in scripts or let Fuel does it for us?
+## If smth will changed in CLI report structure for Fuel, then using Fuel result is more robust
+
+## TODO:
+## - Fetch values from CLI-results by column name, instead of positional "cutting"
+## - Check, what conditions should be enough for free slave node (id, status) (?)
+## - There are a lot of limitations in deploying OpenStack roles, need to extend checks in check_deployment_roles()
+
+# we need auth ONLY by public key
+sshfuelopt='-oBatchMode=yes -oConnectTimeout=5 -oStrictHostKeyChecking=no -oCheckHostIP=no -oUserKnownHostsFile=/dev/null -q'
 
 
 exec_on_fuel_master() {
@@ -39,7 +43,7 @@ exec_on_fuel_master() {
   host=$2
   cmd=$3
 
-  # we will error too, if we need to hide them, then use  2>&1 and provide logic to process exeptions
+  # Connecting to master-fuel
   result=$(ssh -i ${KEY} $sshfuelopt ${user}@${host} "${cmd}")
   code=$?
     
@@ -90,7 +94,7 @@ create_fuel_env() {
   # fuel env create --name MyEnv --rel 1
   name=$1  #name of env
   rel=$2   #release number
-  mode=${3:-multinode}
+  mode=${3:-multinode} # env mode
 
   if [[ -z $1 || -z $2 || ! $2 =~ ^[0-9]+$ ]]; then
     echo "Please be sure, that you defined parameters: \$1=name, \$2=release (Number)"
@@ -170,7 +174,6 @@ delete_fuel_env() {
   return $?
 }
 
-########### Working  with nodes
 
 get_list_fuel_node() {
   # Get the list of all nodes (default) or for exact environment
@@ -265,8 +268,6 @@ provision_node(){
   return $?
 }
 
-##### Different staff
-## TODO for staff: we need to make selection not on position of column, but by name
 
 get_nodes_ready_for_deployment() {
   # Get the list of nodes, ready for deployment (nodes can be in offline mode)
@@ -289,6 +290,7 @@ get_env_id_by_name() {
     exit 1
   fi
 
+  # env_name can be "name", so we need to skip first 3 lines of fuel output in order not to count them
   ENV_ID=$(get_list_fuel_env | cut -d'|' -f1,3 | tail -n+3 | grep ${env_name} | cut -d'|' -f1)
 
   if [[ -z ${ENV_ID} ]]; then
@@ -332,9 +334,8 @@ check_deployment_roles() {
 
   # string for nodes role should be defined in format:
   # - role1,role2|role1,role3|role2|role3 , where nodes roles separated by "|"
-  # - no space allowed and they will be removed automatically
-  # - 
-
+  # - no space allowed, because they will be removed automatically
+  
   deployment_mode=$1
   list_of_roles=$2
 
@@ -345,103 +346,104 @@ check_deployment_roles() {
     return 1
   fi
 
-# check mode 'multinode', 'ha'
-if ! [[ "${deployment_mode}" =~ ^(multinode|ha)$ ]]; then
-    echo "Incorrect deployment mode. Please use ('multinode' or 'ha')"
-    exit 1
-fi
-
-# remove spaces in list of roles
-list_of_roles=$(echo $2 | sed 's/\s\+//g')
-
-# count the number of nodes, that user want to use in this deployment(count "|" + 1)
-N_NODES_TO_DEPLOY=$(($(grep -o "|" <<< "${list_of_roles}" | wc -l )+1))
-
-# one node is not allowed we need at least one controller and one compute
-if [ ${N_NODES_TO_DEPLOY} -lt 2 ];then
-  echo "You should have at least TWO nodes with roles: compute and controller"
-  exit 1
-fi
-
-# get list of nodes ready for deployment
-DISCOVERED_NODES=$(get_nodes_ready_for_deployment)
-N_DISCOVERED_NODES=$(echo ${DISCOVERED_NODES} | wc -w)
-
-# in case we have not enough free slave nodes - aborting
-if [ ${N_DISCOVERED_NODES} -lt ${N_NODES_TO_DEPLOY} ]; then
-  echo "Not enough free slave nodes for deployment (for this scenario)"
-  echo "NEED: ${N_NODES_TO_DEPLOY}, HAVE: ${N_DISCOVERED_NODES}"
-  exit 1
-fi
-
-# Let's check roles names for correctness
-# get the list in forms "role role role" - replacing , and | by space
-SANITY_ROLES=$(echo ${list_of_roles} | sed 's/,/ /g;s/|/ /g')
-for r in ${SANITY_ROLES}; do
-  if ! [[ "${r}" =~ ^(controller|compute|cinder|zabbix-server|ceph-osd)$ ]]; then
-      echo "Incorrect ROLE: ${r}"
-      echo "Please use: (controller|compute|cinder|zabbix-server|ceph-osd)"
+  # check mode 'multinode', 'ha'
+  if ! [[ "${deployment_mode}" =~ ^(multinode|ha)$ ]]; then
+      echo "Incorrect deployment mode. Please use ('multinode' or 'ha')"
       exit 1
   fi
-done
 
-# Let's check roles, also for different deployment modes
-# number of controllers
-N_CONTROLLERS=$(grep -o "controller" <<< "${list_of_roles}" | wc -l )
-N_ZABBIX=$(grep -o "zabbix-server" <<< "${list_of_roles}" | wc -l )
-N_COMPUTE=$(grep -o "compute" <<< "${list_of_roles}" | wc -l )
+  # remove spaces in list of roles
+  list_of_roles=$(echo $2 | sed 's/\s\+//g')
 
-case "${deployment_mode}" in
-  multinode)
-    if [ ${N_CONTROLLERS} -ne 1 ]; then
-      echo "One CONTROLLER should be in Multimode cluster mode"
-    exit 1
-    fi
-    # check zabbix-server
-    if [ ${N_ZABBIX} -gt 1 ]; then
-      echo "None or ONE ZABBIX should be in Multimode cluster mode"
-    exit 1
-    fi
-    # check compute
-    if [ ${N_COMPUTE} -lt 1 ]; then
-      echo "At least ONE COMPUTE should be in Multimode cluster mode"
-    exit 1
-    fi
-  ;;
-  ha)
-    if [ ${N_CONTROLLERS} -lt 1 ]; then
-      echo "At least ONE controller should be in HA cluster mode"
-    exit 1
-    fi    
-  ;;
-esac
+  # count the number of nodes, that user want to use in this deployment(count "|" + 1)
+  #N_NODES_TO_DEPLOY=$(($(grep -o "|" <<< "${list_of_roles}" | wc -l )+1))
+  N_NODES_TO_DEPLOY=$(echo "${list_of_roles}" | tr '|' '\n' | wc -l )
 
-# no controller and compute on the same node
-OIFS="${IFS}"
-NIFS=$'|'
-IFS="${NIFS}"
-
-for role in ${list_of_roles}; do
-  IFS="${OIFS}"
-  # compute and controller on the same node?
-  if [[ ${role} == $(echo ${role} | awk '/compute/ && /controller/') ]]; then
-    echo "Cannot assign compute and controller role to the same node"
+  # one node is not allowed we need at least one controller and one compute
+  if [ ${N_NODES_TO_DEPLOY} -lt 2 ];then
+    echo "You should have at least TWO nodes with roles: compute and controller"
     exit 1
   fi
-  # compute and zabbix-server on the same node?
-  if [[ ${role} == $(echo ${role} | awk '/compute/ && /zabbix-server/') ]]; then
-    echo "Cannot assign compute and zabbix-server role to the same node"
+
+  # get list of nodes ready for deployment
+  DISCOVERED_NODES=$(get_nodes_ready_for_deployment)
+  N_DISCOVERED_NODES=$(echo ${DISCOVERED_NODES} | wc -w)
+
+  # in case we have not enough free slave nodes - aborting
+  if [ ${N_DISCOVERED_NODES} -lt ${N_NODES_TO_DEPLOY} ]; then
+    echo "Not enough free slave nodes for deployment (for this scenario)"
+    echo "NEED: ${N_NODES_TO_DEPLOY}, HAVE: ${N_DISCOVERED_NODES}"
     exit 1
   fi
-  # zabbix-server and controller on the same node?
-  if [[ ${role} == $(echo ${role} | awk '/controller/ && /zabbix-server/') ]]; then
-    echo "Cannot assign controller and zabbix-server role to the same node"
-    exit 1
-  fi
+
+  # Let's check roles names for correctness
+  # get the list in forms "role role role" - replacing , and | by space
+  SANITY_ROLES=$(echo ${list_of_roles} | sed 's/,/ /g;s/|/ /g')
+  for r in ${SANITY_ROLES}; do
+    if ! [[ "${r}" =~ ^(controller|compute|cinder|zabbix-server|ceph-osd)$ ]]; then
+        echo "Incorrect ROLE: ${r}"
+        echo "Please use: (controller|compute|cinder|zabbix-server|ceph-osd)"
+        exit 1
+    fi
+  done
+
+  # Let's check roles, also for different deployment modes
+  # number of controllers
+  N_CONTROLLERS=$(grep -o "controller" <<< "${list_of_roles}" | wc -l )
+  N_ZABBIX=$(grep -o "zabbix-server" <<< "${list_of_roles}" | wc -l )
+  N_COMPUTE=$(grep -o "compute" <<< "${list_of_roles}" | wc -l )
+
+  case "${deployment_mode}" in
+    multinode)
+      if [ ${N_CONTROLLERS} -ne 1 ]; then
+        echo "One CONTROLLER should be in Multimode cluster mode"
+      exit 1
+      fi
+      # check zabbix-server
+      if [ ${N_ZABBIX} -gt 1 ]; then
+        echo "None or ONE ZABBIX should be in Multimode cluster mode"
+      exit 1
+      fi
+      # check compute
+      if [ ${N_COMPUTE} -lt 1 ]; then
+        echo "At least ONE COMPUTE should be in Multimode cluster mode"
+      exit 1
+      fi
+    ;;
+    ha)
+      if [ ${N_CONTROLLERS} -lt 1 ]; then
+        echo "At least ONE controller should be in HA cluster mode"
+      exit 1
+      fi    
+    ;;
+  esac
+
+  # no controller and compute on the same node
+  OIFS="${IFS}"
+  NIFS=$'|'
   IFS="${NIFS}"
-done
 
-IFS="${OIFS}"
+  for role in ${list_of_roles}; do
+    IFS="${OIFS}"
+    # compute and controller on the same node?
+    if [[ ${role} == $(echo ${role} | awk '/compute/ && /controller/') ]]; then
+      echo "Cannot assign compute and controller role to the same node"
+      exit 1
+    fi
+    # compute and zabbix-server on the same node?
+    if [[ ${role} == $(echo ${role} | awk '/compute/ && /zabbix-server/') ]]; then
+      echo "Cannot assign compute and zabbix-server role to the same node"
+      exit 1
+    fi
+    # zabbix-server and controller on the same node?
+    if [[ ${role} == $(echo ${role} | awk '/controller/ && /zabbix-server/') ]]; then
+      echo "Cannot assign controller and zabbix-server role to the same node"
+      exit 1
+    fi
+    IFS="${NIFS}"
+  done
+
+  IFS="${OIFS}"
 
 }
 
@@ -473,6 +475,7 @@ deploy_env() {
 deploy_openstack() {
   # Deploy OpenStack
   # we need Environment Name and list of nodes_roles
+  # by default mode="multinode" and release=1
   ENV_NAME=$1
   ROLES=$2
   E_MODE=${3:-multinode}
@@ -487,6 +490,7 @@ deploy_openstack() {
     return 1
   fi
 
+  echo
   echo -e "Deploying: \tNAME=${ENV_NAME}"
   echo -e "\t\tROLES=${ROLES}"
   echo -e "\t\tMODE=${E_MODE}"
@@ -514,14 +518,17 @@ deploy_openstack() {
   FIELD=1
 
   for node in ${FREE_DISCOVERED_NODES}; do
+    if [ ${FIELD} -gt $(echo "${ROLES}" | tr '|' '\n' | wc -l) ]; then
+      break
+    fi
     role=$(echo ${ROLES} | cut -d'|' -f${FIELD} )
       assign_role_to_node "${node}" "${role}" "${ENV_ID}"
     (( FIELD++ ))
   done
-  
+
   # Deploying, we can check if the slaves are online, but we also use error from fuel
   echo 
-  echo "Deploying... please wait"
+  echo "Waiting for OpenStack deployment. Please do NOT abort the script..."
   echo 
   deploy_env "${ENV_ID}"
 }

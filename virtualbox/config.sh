@@ -123,7 +123,7 @@ KEY=${KEYPATH}${vm_name_prefix}key
 
 # Options for OpenStack env deployment
 # fuel environment name
-ENV_NAME="MyEnv2"
+ENV_NAME="Test"
 # Run slave on CentOS
 ENV_RELEASE=1 # centos
 # mode of environment
