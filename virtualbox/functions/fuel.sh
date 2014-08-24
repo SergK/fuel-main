@@ -448,14 +448,6 @@ check_deployment_roles() {
 }
 
 
-deploy_node() {
-  # deploy node after provisioning
-  # fuel node --deploy --node 1,2 --env 1
-  # TODO: node should be in online
-  echo "Not implemented"
-}
-
-
 deploy_env() {
   # deploy environment changes (provision+deploy)
   # fuel --env 1 deploy-changes
@@ -519,6 +511,7 @@ deploy_openstack() {
 
   for node in ${FREE_DISCOVERED_NODES}; do
     if [ ${FIELD} -gt $(echo "${ROLES}" | tr '|' '\n' | wc -l) ]; then
+      # we don't need more free nodes without roles :), so exit
       break
     fi
     role=$(echo ${ROLES} | cut -d'|' -f${FIELD} )
