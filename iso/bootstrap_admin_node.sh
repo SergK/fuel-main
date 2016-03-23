@@ -111,7 +111,14 @@ function countdown() {
 }
 
 function fail() {
-  echo "ERROR: Fuel node deployment FAILED! Check "${LOGFILE}" for details" 1>&2
+  MSG="ERROR: Fuel node deployment FAILED! Check ${LOGFILE} for details"
+	python <<-EOF
+	import os
+	with open("$LOGFILE", "a") as lf:
+	    lf.write("$MSG" + '\n')
+	    os.fsync(lf.fileno())
+	EOF
+
   exit 1
 }
 
